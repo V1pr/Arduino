@@ -60,7 +60,7 @@ int switchPins[] = { 4 };
  *   0: on/off
  *   >0: will set switch ON for this DELAY miliseconds - toggle
  */
-int switchTypes[] = { 150 };
+int switchTypes[] = { 0 };
 
 // automatic numbering and trailing slash - this is the MQTT base address - modify to suit you setup, or leave it as it is :)
 const char* switchTopic_base = "house/switch";
@@ -84,13 +84,14 @@ long lastMsg = 0;
 float temp = 0.0;
 float hum = 0.0;
 float diff = 1.0;
-
+long now = 0;
 
 void setup() {
 
+  delay(50);
+  
   //start the serial line for debugging
   Serial.begin(115200);
-  Serial.println();
   delay(150);
 
   // calculate the array length
@@ -106,11 +107,17 @@ void setup() {
     digitalWrite(switchPins[idx], LOW);
   }
 
+  // builtin LED - Off now
+  //pinMode(LED_BUILTIN,OUTPUT);
+  //digitalWrite(LED_BUILTIN,LOW);
+
   ArduinoOTA.setHostname("Arduino ESP"); // A name given to your ESP8266 module when discovering it as a port in ARDUINO IDE
   ArduinoOTA.begin(); // OTA initialization
 
   //start wifi subsystem
   WiFi.begin(ssid, password);
+  // for light sleep
+  WiFi.mode(WIFI_STA);
   //attempt to connect to the WIFI network and then connect to the MQTT server
   reconnect();
 
@@ -118,6 +125,9 @@ void setup() {
   
   //wait a bit before starting the main loop
   delay(500);
+
+  //  Enable light sleep
+  WiFi.setSleepMode(WIFI_LIGHT_SLEEP);
 }
 
 
@@ -129,7 +139,7 @@ void loop(){
   //maintain MQTT connection
   client.loop();
 
-  long now = millis();
+  now = millis();
   if (now - lastMsg > 2000) {
     lastMsg = now;
 
@@ -158,10 +168,29 @@ void loop(){
   ArduinoOTA.handle();
 
   // Sleep
+  /*
+   * Use this for deep sleep -> needs testing!
   if ( sleepTimeS > 0 ) {
     Serial.println("ESP8266 in sleep mode");
     ESP.deepSleep(sleepTimeS * 1000000);
+    delay(30);
+    Serial.println("ESP8266 is awake");
   }
+  */
+  delay(sleepTimeS*1000);
+
+  Serial.print(now);
+  Serial.println(" ESP Awake");
+
+  /*
+   *
+   * this only works, if there is NO Serial, since uses the same PIN as TX
+   * 
+  //flash LED
+  digitalWrite(LED_BUILTIN,HIGH);
+  delay(150);
+  digitalWrite(LED_BUILTIN,LOW);
+  */
 }
 
 /*
@@ -174,7 +203,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
   String topicStr = topic; 
 
   //Print out some debugging info
-  Serial.println("Callback update.");
+  Serial.println("Callback update from MQTT broker.");
   Serial.print("Topic: ");
   Serial.println(topicStr);
   Serial.print("Payload: ");
@@ -193,7 +222,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
 
     char swTopicConf[strlen(switchTopic_base)+10];
     sprintf(swTopicConf,"%s%d/Confirm",switchTopic_base,swNum);
-    Serial.println(swTopicConf);
+    //Serial.println(swTopicConf);
 
     if ( swNum <= switchCnt ) {
       //turn the switch on if the payload is '1' and publish to the MQTT server a confirmation message
@@ -204,7 +233,10 @@ void callback(char* topic, byte* payload, unsigned int length) {
       if ( buffer[0] == '1' ) {
          digitalWrite(switchPins[swNum-1], HIGH);
          client.publish(swTopicConf, "1");
-         if ( switchTypes[swNum-1] > 0 && isdigit(switchTypes[swNum-1]) ) {
+         //Serial.println(switchTypes[swNum-1]);
+         //Serial.println(isdigit(switchTypes[swNum-1]));
+         if ( switchTypes[swNum-1] > 0 ) {
+            Serial.println("Turning off after delay");
             delay(switchTypes[swNum-1]);
             digitalWrite(switchPins[swNum-1], LOW);
             client.publish(swTopicConf, "0");
@@ -244,8 +276,8 @@ void reconnect() {
   //make sure we are connected to WIFI before attemping to reconnect to MQTT
   if(WiFi.status() == WL_CONNECTED){
     delay(10);
-   // Loop until we're reconnected to the MQTT server
-    while (!client.connected()) {
+    // Loop until we're reconnected to the MQTT server
+    while ( ! client.connected() ) {
       Serial.print("Attempting MQTT connection...");
 
       // Generate client name based on MAC address and last 8 bits of microsecond counter
@@ -257,20 +289,22 @@ void reconnect() {
 
       //if connected, subscribe to the topic(s) we want to be notified about
       //EJ: Delete "mqtt_username", and "mqtt_password" here if you are not using any 
-      if (client.connect((char*) clientName.c_str(),"mqtt_username", "mqtt_password")) {  //EJ: Update accordingly with your MQTT account 
+      if (client.connect((char*) clientName.c_str(),mqtt_user, mqtt_password)) {
         Serial.println("\tMQTT Connected - subscribing to topics");
-        //Serial.println(switchTopic_base);
-        //Serial.print("Size: ");
-        //Serial.println(strlen(switchTopic_base));
         char swT[strlen(switchTopic_base)+3];
         for (int idx = 1; idx <= switchCnt; idx++) {
           sprintf(swT,"%s%d",switchTopic_base,idx);
-          Serial.println(swT);
+          Serial.print("Subscribing to ");
+          Serial.print(swT);
+          Serial.print(" ... ");
           client.subscribe(swT);
+          Serial.println("OK");
         }
+      } else {
+        //otherwise print failed for debugging
+        Serial.println("\tFailed."); 
+        delay(3000);
       }
-      //otherwise print failed for debugging
-      else{Serial.println("\tFailed."); abort();}
       delay(50);
     }
   }
