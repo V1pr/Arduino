@@ -38,6 +38,7 @@ const char* password = "your_wifi_password";
 #define temperature_topic "sensor/temperature"
 
 #define DHTTYPE DHT11
+// pin 14 is D5 for my board
 #define DHTPIN  14
 
 
@@ -49,30 +50,13 @@ const char* password = "your_wifi_password";
 
 // max 9 switches!
 const int switchCnt = 1;
+// help for pinout:
 // D4 = 2
 // D2 = 4
 int switchPins[switchCnt] = { 4 };
 
-// automatic numbering and trailing slash
+// automatic numbering and trailing slash - this is the MQTT base address - modify to suit you setup, or leave it as it is :)
 const char* switchTopic_base = "house/switch";
-
-/*
-
-const int switchPin2 = D2;
-const int switchPin3 = D3;
-const int switchPin4 = D5;
-*/
-
-//EJ: These are the MQTT Topic that will be used to manage the state of Relays 1 ~ 4
-//EJ: Refer to my YAML component entry
-//EJ: feel free to replicate the line if you have more relay switch to control, but dont forget to increment the number suffix so as increase switch logics in loop()
-
-/*
-char const* switchTopic1 = "/house/switch1/";
-char const* switchTopic2 = "/house/switch2/";
-char const* switchTopic3 = "/house/switch3/";
-char const* switchTopic4 = "/house/switch4/";
-*/
 
 WiFiClient wifiClient;
 PubSubClient client(mqtt_server, 1883, callback, wifiClient);
@@ -111,7 +95,7 @@ void setup() {
   Serial.println("Setup OK");
   
   //wait a bit before starting the main loop
-  delay(3000);
+  delay(1500);
 }
 
 
