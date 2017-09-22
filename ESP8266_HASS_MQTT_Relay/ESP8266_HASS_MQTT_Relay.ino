@@ -23,16 +23,17 @@
 #include <ESP8266WiFi.h>
 #include <ArduinoOTA.h>
 #include <DHT.h>
+#include <ctype.h>
 
 void callback(char* topic, byte* payload, unsigned int length);
 
 //EDIT THESE LINES TO MATCH YOUR SETUP
+const char* ssid = "your_ssid";
+const char* password = "your_wifi_password";
+
 #define mqtt_server "your_mqtt_server_ip"
 #define mqtt_user "your_mqtt_server_user"
 #define mqtt_password "your_mqtt_server_pass"
-
-const char* ssid = "your_ssid";
-const char* password = "your_wifi_password";
 
 #define humidity_topic "sensor/humidity"
 #define temperature_topic "sensor/temperature"
@@ -49,19 +50,36 @@ const char* password = "your_wifi_password";
 //
 
 // max 9 switches!
-const int switchCnt = 1;
 // help for pinout:
 // D4 = 2
 // D2 = 4
-int switchPins[switchCnt] = { 4 };
+int switchPins[] = { 4 };
+/*
+ * Type of the switch
+ * 
+ *   0: on/off
+ *   >0: will set switch ON for this DELAY miliseconds - toggle
+ */
+int switchTypes[] = { 150 };
 
 // automatic numbering and trailing slash - this is the MQTT base address - modify to suit you setup, or leave it as it is :)
 const char* switchTopic_base = "house/switch";
+
+// sleep time - set to 0 to disable
+const int sleepTimeS = 3;
+
+
+/*
+ * 
+ *  NO MODIFICATION NEEDED BELOW
+ * 
+ */
 
 WiFiClient wifiClient;
 PubSubClient client(mqtt_server, 1883, callback, wifiClient);
 DHT dht(DHTPIN, DHTTYPE, 11); // 11 works fine for ESP8266
 
+int switchCnt = 1;
 long lastMsg = 0;
 float temp = 0.0;
 float hum = 0.0;
@@ -72,13 +90,17 @@ void setup() {
 
   //start the serial line for debugging
   Serial.begin(115200);
-  delay(50);
+  Serial.println();
+  delay(150);
+
+  // calculate the array length
+  switchCnt = sizeof(switchPins)/sizeof(int);
   
-  //initialize the switch as an output and set to LOW (off)
+  //initialize the switch pins as an output and set to LOW (off)
   for ( int idx = 0; idx < switchCnt; idx++ ) {
     Serial.print("Initializing RELAY ");
-    Serial.print(idx);
-    Serial.print(" on ");
+    Serial.print(idx+1);
+    Serial.print(" on GPIO pin ");
     Serial.println(switchPins[idx]);
     pinMode(switchPins[idx], OUTPUT); // Relay Switch 1
     digitalWrite(switchPins[idx], LOW);
@@ -95,7 +117,7 @@ void setup() {
   Serial.println("Setup OK");
   
   //wait a bit before starting the main loop
-  delay(1500);
+  delay(500);
 }
 
 
@@ -134,8 +156,18 @@ void loop(){
   //MUST delay to allow ESP8266 WIFI functions to run
   delay(10); 
   ArduinoOTA.handle();
+
+  // Sleep
+  if ( sleepTimeS > 0 ) {
+    Serial.println("ESP8266 in sleep mode");
+    ESP.deepSleep(sleepTimeS * 1000000);
+  }
 }
 
+/*
+ * 
+ * Callback to handle MQTT server calls
+ */
 void callback(char* topic, byte* payload, unsigned int length) {
 
   //convert topic to string to make it easier to work with
@@ -172,6 +204,11 @@ void callback(char* topic, byte* payload, unsigned int length) {
       if ( buffer[0] == '1' ) {
          digitalWrite(switchPins[swNum-1], HIGH);
          client.publish(swTopicConf, "1");
+         if ( switchTypes[swNum-1] > 0 && isdigit(switchTypes[swNum-1]) ) {
+            delay(switchTypes[swNum-1]);
+            digitalWrite(switchPins[swNum-1], LOW);
+            client.publish(swTopicConf, "0");
+         }
       } else if (buffer[0] == '0' ){
          digitalWrite(switchPins[swNum-1], LOW);
          client.publish(swTopicConf, "0");
